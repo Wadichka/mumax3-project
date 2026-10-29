@@ -1,0 +1,131 @@
+// Number of cells in each direction
+Nx := 512
+Ny := 512
+Nz := 1
+
+// Units
+um := 1e-6
+mm := 1e-3
+
+// Parameters of computational domain (meters)
+size_x := 5000 * um
+size_y := 5000 * um
+size_z := 10 * um
+
+
+cells_per_meter_x := Nx / size_x
+cells_per_meter_y := Ny / size_y
+cells_per_meter_z := Nz / size_z
+
+SetGridsize(Nx, Ny, Nz)
+SetCellsize(size_x / Nx, size_y / Ny, size_z / Nz)
+
+SetGeom(ImageShape("9_rings_4_waveguids(without_PML).png"))
+
+
+pad := 250 * um // Distance between antenna and edge of PML
+
+waveguide_width := 300 * um // Width of the waveguide
+waveguide_length := 5000 * um // Length of the waveguide
+waveguide_pad := 810 * um // Distance between waveguide and edge of domain
+
+// Parameters of the micro strip (antenna)
+micro_strip_width := 20 * um
+micro_strip_length := waveguide_width // Length of the micro strip is equal to the width of the waveguide
+
+
+// YIG parameters
+alpha = 0.00001
+Aex = 3.614e-12
+Msat = 1.39e5 // (1853 * 1000) / (4 * pi)
+
+
+// ABL setup: Logarithmic gradient 
+alpha_min := 0.00001
+alpha_max := 1.0
+
+abl_levels := 32 // Number of regions for ABL
+abl_size := 300 * um // Length of ABL region
+
+abl_layer_size := abl_size / abl_levels // Size for a single layer of ABL region
+
+// Area of the domain where ABL is not applied
+base_rectangle_x := size_x - 2 * abl_size
+base_rectangle_y := size_y - 2 * abl_size
+base_rectangle_z := size_z
+
+for level := 1; level <= abl_levels; level++ {
+    abl_layer := Cuboid(
+                    base_rectangle_x + level * abl_layer_size * 2,
+                    base_rectangle_y + level * abl_layer_size * 2,
+                    base_rectangle_z).sub(Cuboid(
+                        base_rectangle_x + (level - 1) * abl_layer_size * 2,
+                        base_rectangle_y + (level - 1) * abl_layer_size * 2,
+                        base_rectangle_z))
+    
+    layer_coefficient := alpha_min * pow(alpha_max / alpha_min, level / abl_levels) // Exponential growth of alpha from inner to outer layer
+
+    DefRegion(level, abl_layer)
+    alpha.SetRegion(level, layer_coefficient)
+}
+
+Save(alpha)
+
+
+B_stat := 1200e-4
+bb := 90 // Angle of the wave propagation in degrees
+m = uniform(cos(bb * pi / 180), sin(bb * pi / 180), 0)
+B_ext = vector(B_stat * cos(bb * pi / 180), B_stat * sin(bb * pi / 180), 0) // If bb = 90, then wage propagates along the y-axis, and the external field is along the x-axis
+
+OutputFormat = OVF2_TEXT
+
+Relax()
+SaveAs(m, "ground_state_m")
+SaveAs(B_demag, "ground_state_B_ext")
+
+
+// Amp_sinc := 0.001
+Amp := 8.0e-4
+
+t0 := 50.0e-9
+f0 := 5.22e9
+Fs := 2 * f0
+
+SetSolver(5) // This call is redundant because the Dormand-Prince method is the default solver in MuMax3
+MaxDt = 1 / Fs
+MinDt = 1e-15
+MaxErr = 1.0e-8
+
+/*
+Antenna coordinates
+Note: these coordinates define the center of the antenna in the coordinate plain, 
+that is matched with coordinates (indices) of cells in the simulation domain 
+(down left corner - (0, 0, 0), upper right corner - (Nx-1, Ny-1, Nz-1)).
+*/
+
+// Fist antenna - the down left corner of the domain
+antenna_x := abl_size + pad + micro_strip_width / 2
+antenna_y := waveguide_pad + micro_strip_length / 2
+
+
+mask := NewSlice(3, Nx, Ny, 1)
+
+for i := floor((antenna_x - micro_strip_width / 2) * cells_per_meter_x);
+    i <= floor((antenna_x + micro_strip_width / 2) * cells_per_meter_x);
+    i++ {
+        for j := floor((antenna_y - micro_strip_length / 2) * cells_per_meter_y);
+            j <= floor((antenna_y + micro_strip_length / 2) * cells_per_meter_y);
+            j++ {
+                B := pow(cos(pi * antenna_x), 2) *  
+                    pow(cos(pi * antenna_y), 2)
+                
+                mask.Set(2, i, j, 0, B) // MSSW
+        }
+}
+
+
+B_ext.Add(mask, Amp * sin(2 * pi * f0 * t))
+TableAutoSave(20e-12)
+AutoSave(m, 10e-9)
+Run(300e-9)
+Save(m)
