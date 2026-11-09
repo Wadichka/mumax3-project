@@ -10,12 +10,20 @@
 
 *.log
 
-
-# Geometry images
+# Images
+result/
 *.png
 *.jpeg
 *.jpg
 *.bmp
+
+!geometry/*.png
+
+# Generated scripts
+scripts/
+
+# Base script
+!script.txt
 
 
 # Files created by the IDE or OS
