@@ -194,7 +194,7 @@ for i := floor((antenna2_x - micro_strip_width / 2) / cell_size_x);
 }
 $third_antenna_close
 
-$fourth_antenna_close
+$fourth_antenna_open
 for i := floor((antenna3_x - micro_strip_width / 2) / cell_size_x);
     i <= floor((antenna3_x + micro_strip_width / 2) / cell_size_x);
     i++ {
