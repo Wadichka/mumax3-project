@@ -62,6 +62,7 @@ if __name__ == "__main__":
                 f"{frequency}GHz.mx3"
 
             variables = {
+                "frequency": f"{frequency}e9",
                 "first_antenna_open": "" if down_left_antenna else "/*",
                 "first_antenna_close": "" if down_left_antenna else "*/",
                 "second_antenna_open": "" if down_right_antenna else "/*",

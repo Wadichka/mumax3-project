@@ -12,13 +12,13 @@ size_x := 5000 * um
 size_y := 5000 * um
 size_z := 10 * um
 
-
-cells_per_meter_x := Nx / size_x
-cells_per_meter_y := Ny / size_y
-cells_per_meter_z := Nz / size_z
+// Parameters of a single cell in each direction (meters)
+cell_size_x := size_x / Nx
+cell_size_y := size_y / Ny
+cell_size_z := size_z / Nz
 
 SetGridsize(Nx, Ny, Nz)
-SetCellsize(size_x / Nx, size_y / Ny, size_z / Nz)
+SetCellsize(cell_size_x, cell_size_y, cell_size_z)
 
 SetGeom(ImageShape("./geometry/9_rings_4_waveguids(without_PML).png"))
 
@@ -40,7 +40,7 @@ Aex = 3.614e-12
 Msat = 1.39e5 // (1853 * 1000) / (4 * pi)
 
 
-// ABL setup: Logarithmic gradient 
+// ABL setup: Exponential gradient 
 alpha_min := 0.00001
 alpha_max := 1.0
 
@@ -62,8 +62,9 @@ for level := 1; level <= abl_levels; level++ {
                         base_rectangle_x + (level - 1) * abl_layer_size * 2,
                         base_rectangle_y + (level - 1) * abl_layer_size * 2,
                         base_rectangle_z))
-    
-    layer_coefficient := alpha_min * pow(alpha_max / alpha_min, level / abl_levels) // Exponential growth of alpha from inner to outer layer
+
+    // Exponential growth of alpha from inner to outer layer
+    layer_coefficient := alpha_min * pow(alpha_max / alpha_min, 1.0 * level / abl_levels)
 
     DefRegion(level, abl_layer)
     alpha.SetRegion(level, layer_coefficient)
@@ -88,7 +89,7 @@ SaveAs(B_demag, "ground_state_B_ext")
 Amp := 8.0e-4
 
 t0 := 50.0e-9
-f0 := 5.23e9
+f0 := $frequency
 Fs := 2 * f0
 
 SetSolver(5) // This call is redundant because the Dormand-Prince method is the default solver in MuMax3
@@ -109,40 +110,43 @@ antenna_x := abl_size + pad + micro_strip_width / 2
 antenna_y := waveguide_pad + micro_strip_length / 2
 $first_antenna_close
 
-// Second antenna - the down right corner of the domain
+// Second antenna - the up right corner of the domain
 $second_antenna_open
 antenna1_x := size_x - (abl_size + pad + micro_strip_width / 2)
-antenna1_y := waveguide_pad + micro_strip_length / 2
+antenna1_y := size_y - (waveguide_pad + micro_strip_length / 2)
 $second_antenna_close
 
-// Third antenna - the up right corner of the domain
+// Third antenna - the up left corner of the domain
 $third_antenna_open
-antenna2_x := size_x - (abl_size + pad + micro_strip_width / 2)
+antenna2_x := abl_size + pad + micro_strip_width / 2
 antenna2_y := size_y - (waveguide_pad + micro_strip_length / 2)
 $third_antenna_close
 
-// Fourth antenna - the up left corner of the domain
+// Fourth antenna - the down right corner of the domain
 $fourth_antenna_open
-antenna3_x := abl_size + pad + micro_strip_width / 2
-antenna3_y := size_y - (waveguide_pad + micro_strip_length / 2)
+antenna3_x := size_x - (abl_size + pad + micro_strip_width / 2)
+antenna3_y := waveguide_pad + micro_strip_length / 2
 $fourth_antenna_close
-
 
 mask := NewSlice(3, Nx, Ny, 1)
 
 $first_antenna_open
-for i := floor((antenna_x - micro_strip_width / 2) * cells_per_meter_x);
-    i <= floor((antenna_x + micro_strip_width / 2) * cells_per_meter_x);
+for i := floor((antenna_x - micro_strip_width / 2) / cell_size_x);
+    i <= floor((antenna_x + micro_strip_width / 2) / cell_size_x);
     i++ {
-        for j := floor((antenna_y - micro_strip_length / 2) * cells_per_meter_y);
-            j <= floor((antenna_y + micro_strip_length / 2) * cells_per_meter_y);
+        for j := floor((antenna_y - micro_strip_length / 2) / cell_size_y);
+            j <= floor((antenna_y + micro_strip_length / 2) / cell_size_y);
             j++ {
                 //B_x := pow(cos(pi * antenna_x), 2)
                 //B_y := pow(cos(pi * antenna_y), 2)
                 //B_y := 1.0 - pow(2.0 * abs(antenna_y - 0.5), 3)
 
-                B_x := pow(cos(pi * abs(i / cells_per_meter_x - antenna_x) / micro_strip_width), 2)
-                B_y := pow(cos(pi * abs(j / cells_per_meter_y - antenna_y) / micro_strip_length), 2)
+                current_cell := Index2Coord(i, j, 0)
+                x := current_cell.X() + size_x / 2
+                y := current_cell.Y() + size_y / 2
+
+                B_x := pow(cos(pi * abs(x - antenna_x) / micro_strip_width), 2)
+                B_y := pow(cos(pi * abs(y - antenna_y) / micro_strip_length), 2)
 
                 B := B_x * B_y
                 mask.Set(2, i, j, 0, B) // MSSW
@@ -150,53 +154,62 @@ for i := floor((antenna_x - micro_strip_width / 2) * cells_per_meter_x);
 }
 $first_antenna_close
 
-
 $second_antenna_open
-for i := floor((antenna1_x - micro_strip_width / 2) * cells_per_meter_x);
-    i <= floor((antenna1_x + micro_strip_width / 2) * cells_per_meter_x);
+for i := floor((antenna1_x - micro_strip_width / 2) / cell_size_x);
+    i <= floor((antenna1_x + micro_strip_width / 2) / cell_size_x);
     i++ {
-        for j := floor((antenna1_y - micro_strip_length / 2) * cells_per_meter_y);
-            j <= floor((antenna1_y + micro_strip_length / 2) * cells_per_meter_y);
+        for j := floor((antenna1_y - micro_strip_length / 2) / cell_size_y);
+            j <= floor((antenna1_y + micro_strip_length / 2) / cell_size_y);
             j++ {
-                B_x := pow(cos(pi * abs(i / cells_per_meter_x - antenna1_x) / micro_strip_width), 2)
-                B_y := pow(cos(pi * abs(j / cells_per_meter_y - antenna1_y) / micro_strip_length), 2)
+                current_cell := Index2Coord(i, j, 0)
+                x := current_cell.X() + size_x / 2
+                y := current_cell.Y() + size_y / 2
+
+                B_x := pow(cos(pi * abs(x - antenna1_x) / micro_strip_width), 2)
+                B_y := pow(cos(pi * abs(y - antenna1_y) / micro_strip_length), 2)
 
                 B := B_x * B_y
-                mask.Set(2, i, j, 0, B) // MSSW
+                mask.Set(2, i, j, 0, B)
         }
 }
 $second_antenna_close
 
-
 $third_antenna_open
-for i := floor((antenna2_x - micro_strip_width / 2) * cells_per_meter_x);
-    i <= floor((antenna2_x + micro_strip_width / 2) * cells_per_meter_x);
+for i := floor((antenna2_x - micro_strip_width / 2) / cell_size_x);
+    i <= floor((antenna2_x + micro_strip_width / 2) / cell_size_x);
     i++ {
-        for j := floor((antenna2_y - micro_strip_length / 2) * cells_per_meter_y);
-            j <= floor((antenna2_y + micro_strip_length / 2) * cells_per_meter_y);
+        for j := floor((antenna2_y - micro_strip_length / 2) / cell_size_y);
+            j <= floor((antenna2_y + micro_strip_length / 2) / cell_size_y);
             j++ {
-                B_x := pow(cos(pi * abs(i / cells_per_meter_x - antenna2_x) / micro_strip_width), 2)
-                B_y := pow(cos(pi * abs(j / cells_per_meter_y - antenna2_y) / micro_strip_length), 2)
+                current_cell := Index2Coord(i, j, 0)
+                x := current_cell.X() + size_x / 2
+                y := current_cell.Y() + size_y / 2
+
+                B_x := pow(cos(pi * abs(x - antenna2_x) / micro_strip_width), 2)
+                B_y := pow(cos(pi * abs(y - antenna2_y) / micro_strip_length), 2)
 
                 B := B_x * B_y
-                mask.Set(2, i, j, 0, B) // MSSW
+                mask.Set(2, i, j, 0, B)
         }
 }
 $third_antenna_close
 
-
-$fourth_antenna_open
-for i := floor((antenna3_x - micro_strip_width / 2) * cells_per_meter_x);
-    i <= floor((antenna3_x + micro_strip_width / 2) * cells_per_meter_x);
+$fourth_antenna_close
+for i := floor((antenna3_x - micro_strip_width / 2) / cell_size_x);
+    i <= floor((antenna3_x + micro_strip_width / 2) / cell_size_x);
     i++ {
-        for j := floor((antenna3_y - micro_strip_length / 2) * cells_per_meter_y);
-            j <= floor((antenna3_y + micro_strip_length / 2) * cells_per_meter_y);
+        for j := floor((antenna3_y - micro_strip_length / 2) / cell_size_y);
+            j <= floor((antenna3_y + micro_strip_length / 2) / cell_size_y);
             j++ {
-                B_x := pow(cos(pi * abs(i / cells_per_meter_x - antenna3_x) / micro_strip_width), 2)
-                B_y := pow(cos(pi * abs(j / cells_per_meter_y - antenna3_y) / micro_strip_length), 2)
+                current_cell := Index2Coord(i, j, 0)
+                x := current_cell.X() + size_x / 2
+                y := current_cell.Y() + size_y / 2
+
+                B_x := pow(cos(pi * abs(x - antenna3_x) / micro_strip_width), 2)
+                B_y := pow(cos(pi * abs(y - antenna3_y) / micro_strip_length), 2)
 
                 B := B_x * B_y
-                mask.Set(2, i, j, 0, B) // MSSW
+                mask.Set(2, i, j, 0, B)
         }
 }
 $fourth_antenna_close
